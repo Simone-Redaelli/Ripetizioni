@@ -133,6 +133,29 @@ export const site = {
     },
   ],
 
+  // ✏️ Il tuo WhatsApp (prefisso + numero, senza + e spazi), es. '393331234567'.
+  // Serve quando il backend non è online (es. su GitHub Pages): la richiesta parte
+  // come messaggio WhatsApp già scritto, diretto a te.
+  whatsappNumber: '',
+
+  // Orari usati solo quando il backend non è online (stessi valori di backend/src/config.js).
+  // Senza backend il sito NON vede il tuo Google Calendar: mostra queste fasce.
+  offlineSchedule: {
+    durations: [60, 90, 120],
+    maxDaysAhead: 30,
+    minNoticeHours: 12,
+    slotStepMinutes: 30,
+    workingHours: {
+      1: [['15:00', '20:00']],
+      2: [['15:00', '20:00']],
+      3: [['15:00', '20:00']],
+      4: [['15:00', '20:00']],
+      5: [['15:00', '19:00']],
+      6: [['09:30', '13:00'], ['15:00', '18:00']],
+      7: [],
+    },
+  },
+
   contacts: {
     email: '', // es. 'simone@email.it'
     instagram: '', // es. 'https://instagram.com/tuonome'

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:pages": "VITE_BASE=/Ripetizioni/ vite build",
+    "deploy:pages": "VITE_BASE=/Ripetizioni/ vite build && npx --yes gh-pages -d dist --dotfiles",
     "preview": "vite preview"
   },
   "dependencies": {

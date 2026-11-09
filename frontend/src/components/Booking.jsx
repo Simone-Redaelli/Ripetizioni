@@ -39,6 +39,41 @@ const longDate = (ymd) => {
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
+// ── Modalità senza server (GitHub Pages): orari dal config e invio via WhatsApp ──
+const OFF = site.offlineSchedule;
+const offlineConfig = () => ({
+  durations: OFF.durations,
+  maxDaysAhead: OFF.maxDaysAhead,
+  workingDays: Object.entries(OFF.workingHours).filter(([, r]) => r.length).map(([d]) => Number(d)),
+});
+/** Istante (ms) di una data+ora del calendario italiano */
+function romeToEpoch(ymd, hhmm) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const [hh, mi] = hhmm.split(':').map(Number);
+  const guess = Date.UTC(y, m - 1, d, hh, mi);
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(new Date(guess)).map((x) => [x.type, x.value]),
+  );
+  const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute);
+  return guess - (wall - guess);
+}
+const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const toHHMM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+function offlineSlots(ymd, duration) {
+  const js = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  const ranges = OFF.workingHours[js === 0 ? 7 : js] ?? [];
+  const earliest = Date.now() + OFF.minNoticeHours * 3600e3;
+  const out = [];
+  for (const [from, to] of ranges) {
+    for (let s = toMin(from); s + duration <= toMin(to); s += OFF.slotStepMinutes) {
+      const t = toHHMM(s);
+      if (romeToEpoch(ymd, t) >= earliest) out.push(t);
+    }
+  }
+  return out;
+}
+
 const CONFETTI = ['π', '∑', '√', '∞', '∫', '{ }', ';', '=', '+', 'x²', '≠', '%'];
 function Confetti() {
   const bits = useMemo(
@@ -64,6 +99,7 @@ function Confetti() {
 export default function Booking() {
   const [cfg, setCfg] = useState(null);
   const [cfgError, setCfgError] = useState('');
+  const [offline, setOffline] = useState(false);
   const [step, setStep] = useState(0);
 
   const [subject, setSubject] = useState('');
@@ -88,8 +124,16 @@ export default function Booking() {
   const loadConfig = () => {
     setCfgError('');
     api.config()
-      .then((c) => { setCfg(c); setDuration((d) => d ?? c.durations[0]); })
-      .catch(() => setCfgError('Il calendario non risponde. Controlla la connessione e riprova.'));
+      .then((c) => {
+        if (!Array.isArray(c?.durations)) throw Object.assign(new Error('no api'), { status: 404 });
+        setOffline(false); setCfg(c); setDuration((d) => d ?? c.durations[0]);
+      })
+      .catch((e) => {
+        // Nessun backend raggiungibile (es. sito su GitHub Pages): uso gli orari del config
+        if (e.status === 0 && !navigator.onLine) return setCfgError('Sei offline. Controlla la connessione e riprova.');
+        const c = offlineConfig();
+        setOffline(true); setCfg(c); setDuration((d) => d ?? c.durations[0]);
+      });
   };
   useEffect(loadConfig, []);
 
@@ -97,6 +141,7 @@ export default function Booking() {
 
   useEffect(() => {
     if (!date || !duration) return;
+    if (offline) { setTime(''); setSlotsError(''); setSlots(offlineSlots(date, duration)); return; }
     let alive = true;
     setSlotsLoading(true);
     setSlotsError('');
@@ -106,7 +151,7 @@ export default function Booking() {
       .catch((e) => alive && (setSlots([]), setSlotsError(e.message)))
       .finally(() => alive && setSlotsLoading(false));
     return () => { alive = false; };
-  }, [date, duration, slotsKey]);
+  }, [date, duration, slotsKey, offline]);
 
   const subjectInfo = site.subjects.find((s) => s.name === subject);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
@@ -130,6 +175,26 @@ export default function Booking() {
   async function submit() {
     setTouched(true);
     if (!formValid) return;
+    if (offline) {
+      if (!site.whatsappNumber) {
+        setError('Le richieste online non sono ancora attive. Riprova tra poco.');
+        return;
+      }
+      const msg = [
+        `Ciao ${site.firstName}! Vorrei chiederti una lezione 📚`,
+        '',
+        `Materia: ${subject}${form.level ? ` (${form.level})` : ''}`,
+        `Quando: ${longDate(date)} alle ${time}`,
+        `Durata: ${fmtMin(duration)}`,
+        `Nome: ${form.name.trim()}`,
+        `Email: ${form.email.trim()}`,
+        form.notes.trim() ? `Note: ${form.notes.trim()}` : null,
+      ].filter((l) => l !== null).join('\n');
+      window.open(`https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+      setDone({ id: null, viaWhatsApp: true });
+      scrollToTop();
+      return;
+    }
     setSending(true);
     setError('');
     try {
@@ -159,7 +224,7 @@ export default function Booking() {
   }
 
   return (
-    <section className="dark booking-sec" id="prenota">
+    <section className="dark booking-sec" id="prenota" data-mode={offline ? 'whatsapp' : 'api'}>
       <div className="wrap">
         <h2 className="h2">Chiedi una lezione</h2>
         <p className="lead">Vedi solo gli orari in cui di solito sono libero. Mandami la richiesta e ti rispondo su WhatsApp.</p>
@@ -180,12 +245,20 @@ export default function Booking() {
               <Scribble type="check" className="done-check" color="var(--red)" width={6} />
               <h3>Richiesta inviata!</h3>
               <p className="nb-pending">Non è ancora confermata</p>
+              {done.viaWhatsApp ? (
+                <p>
+                  Ti si è aperto WhatsApp con il messaggio già scritto: <b>premi invia</b> e la richiesta mi arriva.
+                  Le ripetizioni le faccio nel tempo libero: se quel giorno riesco ci accordiamo lì sul prezzo e ti mando il link Meet.
+                  {' '}<a className="link" href={`https://wa.me/${site.whatsappNumber}`} target="_blank" rel="noreferrer">WhatsApp non si è aperto?</a>
+                </p>
+              ) : (
               <p>
                 Grazie {form.name.split(' ')[0]}.{' '}
                 {done.whatsappSent ? 'Ti ho appena scritto su WhatsApp con il riepilogo.' : 'Ho ricevuto la tua richiesta.'}{' '}
                 Le ripetizioni le faccio nel tempo libero: se quel giorno riesco ci accordiamo lì sul prezzo e ti arrivano <b>email</b> e <b>invito Google Calendar</b> con il link Meet. Se non riesco te lo scrivo e troviamo un altro orario.
               </p>
-              <div className="nb-code">codice <b>{done.id}</b></div>
+              )}
+              {done.id && <div className="nb-code">codice <b>{done.id}</b></div>}
               <div className="nb-recap">
                 <span>{subject}</span><span>{longDate(date)}</span><span>ore {time}</span><span>{fmtMin(duration)}</span>
               </div>
@@ -320,7 +393,7 @@ export default function Booking() {
                     <button type="button" className="btn btn-ink" disabled={!canNext} onClick={() => go(step + 1)}>Continua</button>
                   ) : (
                     <button type="button" className="btn btn-ink" disabled={sending} onClick={submit}>
-                      {sending ? <><span className="spinner" /> Invio…</> : 'Invia la richiesta'}
+                      {sending ? <><span className="spinner" /> Invio…</> : offline ? 'Invia su WhatsApp' : 'Invia la richiesta'}
                     </button>
                   )}
                 </div>
