@@ -174,6 +174,24 @@ L'approvazione di solito arriva in pochi minuti.
 
 ---
 
+## 5a) Sito su GitHub Pages (senza server)
+
+Link: **https://simone-redaelli.github.io/Ripetizioni/**
+
+Senza backend il sito funziona in **modalità WhatsApp**: il calendario mostra le fasce di `offlineSchedule`
+(in `frontend/src/site.config.js`, non legge il Google Calendar) e il pulsante finale apre WhatsApp con la
+richiesta già scritta, diretta al numero in `whatsappNumber`.
+
+Per ripubblicare dopo una modifica:
+```bash
+cd frontend
+npm run deploy:pages
+```
+Prima volta: *Settings → Pages → Build and deployment → Source: Deploy from a branch → `gh-pages` / `(root)`*.
+
+Quando metti online il backend (punto 5), in `frontend/.env` aggiungi `VITE_API_URL=https://tuo-backend` e
+nel backend `ALLOWED_ORIGINS=https://simone-redaelli.github.io`: il sito passa da solo al sistema automatico.
+
 ## 5) Mettilo online
 
 Il backend serve anche il sito React: **un solo servizio Node**.
